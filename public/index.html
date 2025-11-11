@@ -11,59 +11,121 @@
 </head>
 <body>
   <h1>🐺 四人联机游戏</h1>
-  <p>输入房间号（4位字母/数字），和朋友一起加入同一个房间！</p>
-  <input id="roomInput" type="text" placeholder="例如：ABCD" maxlength="10">
-  <button onclick="joinRoom()">加入房间</button>
-  <div id="status">状态：未连接</div>
-  <canvas id="game" width="800" height="600"></canvas>
+  <h2>✅ 版本：2025-04-05-01</h2>
+  <!-- 大厅界面 -->
+  <div id="lobby">
+    <p>输入房间号（4位字母/数字）</p>
+    <input id="roomInput" type="text" placeholder="例如：ABCD" maxlength="10">
+    <br><br>
+    <button onclick="createRoom()">创建房间</button>
+    <button onclick="joinRoom()">加入房间</button>
+  </div>
+
+  <!-- 游戏界面（加入房间后显示） -->
+  <div id="gameUI" style="display:none;">
+    <div id="status">状态：等待中...</div>
+    <div id="playerList"></div>
+    <br>
+    <button onclick="leaveRoom()">退出房间</button>
+    <button id="destroyBtn" onclick="destroyRoom()" style="display:none; background:red; color:white;">
+      💥 解散房间
+    </button>
+    <br><br>
+    <canvas id="game" width="800" height="600"></canvas>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
-    const canvas = document.getElementById('game');
-    const ctx = canvas.getContext('2d');
-    let myId = '';
-    let currentRoom = '';
+  const socket = io();
+  let currentRoom = '';
+  let isHost = false;
 
-    function joinRoom() {
-      const roomId = document.getElementById('roomInput').value.trim().toUpperCase();
-      if (!roomId) {
-        alert('请输入房间号！');
-        return;
-      }
-      currentRoom = roomId;
-      socket.emit('join_room', roomId);
-      document.getElementById('status').textContent = '状态：加入房间 ' + roomId;
+  // 显示提示
+  function showStatus(msg) {
+    document.getElementById('status').textContent = '状态: ' + msg;
+  }
+
+  // 显示房间信息
+  function renderRoom(roomData) {
+    const list = document.getElementById('playerList');
+    list.innerHTML = `<p>房间成员 (${Object.keys(roomData.players).length}/4):</p>`;
+    
+    for (const pid in roomData.players) {
+      const p = roomData.players[pid];
+      const li = document.createElement('div');
+      li.textContent = `${p.name} ${p.isHost ? '👑' : ''}`;
+      li.style.margin = '5px 0';
+      list.appendChild(li);
     }
 
-    socket.on('error', (msg) => {
-      alert('错误：' + msg);
-    });
+    // 显示“解散房间”按钮（仅房主）
+    const destroyBtn = document.getElementById('destroyBtn');
+    destroyBtn.style.display = roomData.ownerId === socket.id ? 'block' : 'none';
+  }
 
-    socket.on('game_state', (state) => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const pid in state.players) {
-        const p = state.players[pid];
-        ctx.fillStyle = p.color;
-        ctx.fillRect(p.x, p.y, 25, 25);
-        if (pid === socket.id) {
-          ctx.strokeStyle = 'white';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(p.x, p.y, 25, 25);
-        }
-      }
-    });
+  // 创建房间
+  window.createRoom = function() {
+    const roomId = document.getElementById('roomInput').value.trim().toUpperCase();
+    if (!roomId) {
+      alert('请输入房间号！');
+      return;
+    }
+    socket.emit('create_room', roomId);
+    currentRoom = roomId;
+    showStatus('创建房间 ' + roomId);
+  };
 
-    // 方向控制（键盘 + 手机触摸）
-    document.addEventListener('keydown', (e) => {
-      if (!currentRoom) return;
-      let dir = '';
-      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') dir = 'up';
-      else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') dir = 'down';
-      else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') dir = 'left';
-      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') dir = 'right';
-      if (dir) socket.emit('change_direction', dir);
-    });
-  </script>
+  // 加入房间
+  window.joinRoom = function() {
+    const roomId = document.getElementById('roomInput').value.trim().toUpperCase();
+    if (!roomId) {
+      alert('请输入房间号！');
+      return;
+    }
+    socket.emit('join_room', roomId);
+    currentRoom = roomId;
+    showStatus('加入房间 ' + roomId);
+  };
+
+  // 退出房间
+  window.leaveRoom = function() {
+    if (!currentRoom) return;
+    socket.emit('leave_room', currentRoom);
+    currentRoom = '';
+    document.getElementById('gameUI').style.display = 'none';
+    document.getElementById('lobby').style.display = 'block';
+    showStatus('已退出房间');
+  };
+
+  // 解散房间（仅房主）
+  window.destroyRoom = function() {
+    if (!currentRoom) return;
+    if (!confirm('确定解散房间？所有玩家将被踢出！')) return;
+    socket.emit('destroy_room', currentRoom);
+  };
+
+  // 监听房间更新
+  socket.on('room_update', (roomData) => {
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('gameUI').style.display = 'block';
+    renderRoom(roomData);
+    // 如果是房主，记录
+    isHost = roomData.ownerId === socket.id;
+  });
+
+  // 监听房间被解散
+  socket.on('room_destroyed', (roomId) => {
+    if (currentRoom === roomId) {
+      alert('房主已解散房间！');
+      currentRoom = '';
+      document.getElementById('gameUI').style.display = 'none';
+      document.getElementById('lobby').style.display = 'block';
+    }
+  });
+
+  socket.on('error', (msg) => {
+    alert('错误: ' + msg);
+  });
+</script>
 </body>
 </html>
