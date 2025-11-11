@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>四人联机游戏 - 4PWolvesKills</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #111; color: white; font-family: Arial; }
+    canvas { background: #000; display: block; margin: 10px 0; }
+    input, button { padding: 8px; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <h1>🐺 四人联机游戏</h1>
+  <p>输入房间号（4位字母/数字），和朋友一起加入同一个房间！</p>
+  <input id="roomInput" type="text" placeholder="例如：ABCD" maxlength="10">
+  <button onclick="joinRoom()">加入房间</button>
+  <div id="status">状态：未连接</div>
+  <canvas id="game" width="800" height="600"></canvas>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    let myId = '';
+    let currentRoom = '';
+
+    function joinRoom() {
+      const roomId = document.getElementById('roomInput').value.trim().toUpperCase();
+      if (!roomId) {
+        alert('请输入房间号！');
+        return;
+      }
+      currentRoom = roomId;
+      socket.emit('join_room', roomId);
+      document.getElementById('status').textContent = '状态：加入房间 ' + roomId;
+    }
+
+    socket.on('error', (msg) => {
+      alert('错误：' + msg);
+    });
+
+    socket.on('game_state', (state) => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const pid in state.players) {
+        const p = state.players[pid];
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 25, 25);
+        if (pid === socket.id) {
+          ctx.strokeStyle = 'white';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(p.x, p.y, 25, 25);
+        }
+      }
+    });
+
+    // 方向控制（键盘 + 手机触摸）
+    document.addEventListener('keydown', (e) => {
+      if (!currentRoom) return;
+      let dir = '';
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') dir = 'up';
+      else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') dir = 'down';
+      else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') dir = 'left';
+      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') dir = 'right';
+      if (dir) socket.emit('change_direction', dir);
+    });
+  </script>
+</body>
+</html>
